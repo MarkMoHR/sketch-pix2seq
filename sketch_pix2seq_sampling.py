@@ -48,7 +48,8 @@ def draw_strokes(data, svg_filename, factor=0.2, padding=50):
     stroke_width = 1
     dwg.add(dwg.path(p).stroke(the_color, stroke_width).fill("none"))
     dwg.save()
-    return dims
+
+    return dims, dwg.tostring()
 
 
 def make_grid_svg(s_list, grid_space=20.0, grid_space_x=20.0):

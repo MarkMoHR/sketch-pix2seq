@@ -3,60 +3,78 @@ import subprocess
 import argparse
 import numpy as np
 from PIL import Image
+import cairosvg
 
 import model as sketch_rnn_model
 from sketch_pix2seq_train import load_dataset
 from sketch_pix2seq_sampling import draw_strokes
 
 
-def svg2png(input_path, svgsize, pngsize, output_path, padding=False, padding_args="--export-area-drawing"):
-    """
-    convert .svg into .png
-    :param input_path:
-    :param svgsize: (w, h)
-    :param pngsize: (w, h)
-    :param output_path:
-    :param padding: whether do padding to png
-    :param padding_args:
-    :return:
-    """
-    x_scale = pngsize[0] / svgsize[0]
-    y_scale = pngsize[1] / svgsize[1]
-    w, h = pngsize
+def pad_image(png_filename, pngsize, version):
+    curr_png = Image.open(png_filename).convert('RGB')
+    png_curr_w = curr_png.width
+    png_curr_h = curr_png.height
+    if version == 'v1':
+        assert png_curr_w == pngsize[0] or png_curr_h == pngsize[1]
+    else:
+        if png_curr_w != pngsize[0] and png_curr_h != pngsize[1]:
+            print('Not aligned', 'png_curr_w', png_curr_w, 'png_curr_h', png_curr_h)
+
+    padded_png = np.zeros(shape=[pngsize[1], pngsize[0], 3], dtype=np.uint8)
+    padded_png.fill(255)
+
+    if png_curr_w > png_curr_h:
+        pad = int(round((png_curr_w - png_curr_h) / 2))
+        padded_png[pad: pad + png_curr_h, :png_curr_w, :] = np.array(curr_png, dtype=np.uint8)
+    else:
+        pad = int(round((png_curr_h - png_curr_w) / 2))
+        padded_png[:png_curr_h, pad: pad + png_curr_w, :] = np.array(curr_png, dtype=np.uint8)
+
+    padded_png = Image.fromarray(padded_png, 'RGB')
+    padded_png.save(png_filename, 'PNG')
+
+
+def svg2png_v1(input_path, svgsize, pngsize, png_filename, padding=False, padding_args="--export-area-drawing"):
+    """convert svg into png, using inkscape"""
+    svg_w, svg_h = svgsize
+    png_w, png_h = pngsize
+    x_scale = png_w / svg_w
+    y_scale = png_h / svg_h
 
     if x_scale > y_scale:
-        y = int(h)
-        cmd = "inkscape {0} {1} -e {2} -h {3}".format(input_path, padding_args, output_path, y)
+        y = int(png_h)
+        cmd = "inkscape {0} {1} -e {2} -h {3}".format(input_path, padding_args, png_filename, y)
     else:
-        x = int(w)
-        cmd = "inkscape {0} {1} -e {2} -w {3}".format(input_path, padding_args, output_path, x)
+        x = int(png_w)
+        cmd = "inkscape {0} {1} -e {2} -w {3}".format(input_path, padding_args, png_filename, x)
 
     # Do the actual rendering
     subprocess.call(cmd.split(), shell=False)
 
     if padding:
-        curr_png = Image.open(output_path).convert('RGB')
-        png_w = curr_png.width
-        png_h = curr_png.height
-        assert png_w == pngsize[0] or png_h == pngsize[1]
+        pad_image(png_filename, pngsize, 'v1')
 
-        max_dim = max(png_w, png_h)
-        padded_png = np.zeros(shape=[max_dim, max_dim, 3], dtype=np.uint8)
-        padded_png.fill(255)
 
-        if png_w > png_h:
-            pad = int(round((png_w - png_h) / 2))
-            padded_png[pad: pad + png_h, :, :] = np.array(curr_png, dtype=np.uint8)
-        else:
-            pad = int(round((png_h - png_w) / 2))
-            padded_png[:, pad: pad + png_w, :] = np.array(curr_png, dtype=np.uint8)
+def svg2png_v2(dwg_string, svgsize, pngsize, png_filename, padding=False):
+    """convert svg into png, using cairosvg"""
+    svg_w, svg_h = svgsize
+    png_w, png_h = pngsize
+    x_scale = png_w / svg_w
+    y_scale = png_h / svg_h
 
-        padded_png = Image.fromarray(padded_png, 'RGB')
-        padded_png.save(output_path, 'PNG')
+    if x_scale > y_scale:
+        cairosvg.svg2png(bytestring=dwg_string, write_to=png_filename, output_height=png_h)
+    else:
+        cairosvg.svg2png(bytestring=dwg_string, write_to=png_filename, output_width=png_w)
+
+    if padding:
+        pad_image(png_filename, pngsize, 'v2')
 
 
 def main(**kwargs):
     data_base_dir = kwargs['data_base_dir']
+    render_mode = kwargs['render_mode']
+
     npz_dir = os.path.join(data_base_dir, 'npz')
     svg_dir = os.path.join(data_base_dir, 'svg')
     png_dir = os.path.join(data_base_dir, 'png')
@@ -89,18 +107,27 @@ def main(**kwargs):
                 actual_idx = png_path[len(split_cate_png_dir) + 1:-4]
                 svg_path = os.path.join(split_cate_svg_dir, str(actual_idx) + '.svg')
 
-                svg_size = draw_strokes(stroke, svg_path, padding=10)  # (w, h)
-                svg2png(svg_path, svg_size, (model_params.img_W, model_params.img_H), png_path,
-                        padding=True)
+                svg_size, dwg_bytestring = draw_strokes(stroke, svg_path, padding=10)  # (w, h)
+
+                if render_mode == 'v1':
+                    svg2png_v1(svg_path, svg_size, (model_params.img_W, model_params.img_H), png_path, padding=True)
+                elif render_mode == 'v2':
+                    svg2png_v2(dwg_bytestring, svg_size, (model_params.img_W, model_params.img_H), png_path,
+                               padding=True)
+                else:
+                    raise Exception('Error: unknown rendering mode.')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_base_dir', '-db', type=str, default='datasets', help="set the data base dir")
+    parser.add_argument('--render_mode', '-rm', type=str, choices=['v1', 'v2'], default='v1',
+                        help="choose a rendering mode")
     args = parser.parse_args()
 
     run_params = {
         "data_base_dir": args.data_base_dir,
+        "render_mode": args.render_mode,
     }
 
     main(**run_params)
