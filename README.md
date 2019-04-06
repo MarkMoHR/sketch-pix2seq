@@ -4,17 +4,19 @@ This is the reimplementation code of paper [Sketch-pix2seq: a Model to Generate 
 
 | Input | Generated examples |
 | --- | --- |
-| ![output examples](https://github.com/MarkMoHR/sketch-pix2seq/blob/master/assets/1583-sample_gt.svg) | ![output examples](https://github.com/MarkMoHR/sketch-pix2seq/blob/master/assets/1583-sample_pred_cond_100.svg) |
+| ![output examples](https://github.com/MarkMoHR/sketch-pix2seq/blob/master/assets/1583-sample_gt.png) | ![output examples](https://github.com/MarkMoHR/sketch-pix2seq/blob/master/assets/1583-sample_pred_cond_100.svg) |
 
 
 ## Requirements
 
 - Python 3
 - Tensorflow (>= 1.4.0)
-- [InkScape](https://inkscape.org/) (for vector sketch rendering)
+- [InkScape](https://inkscape.org/) or [CairoSVG](https://cairosvg.org/) (For vector sketch rendering. Choose one of them is ok.)
 
   ```
   sudo apt-get install inkscape
+  # or
+  pip3 install cairosvg
   ```
 
 
@@ -31,11 +33,21 @@ Follow these steps:
     - Set the name(s) of the downloaded packages in `data_set`
     - Set the size of the raster image in `img_H` / `img_W`
     
-1. run this command to render out raster images, and they can be found under `datasets/` dir:
+1. We provide two approaches of rendering sequential data into raster images:
+
+    - Using [InkScape](https://inkscape.org/): this approach is **slower** but **accurate** all the time
+    
+    ```
+    python render_svg2bitmap.py --data_base_dir='datasets' --render_mode='v1'
+    ```
+
+    - Using [CairoSVG](https://cairosvg.org/): this approach is **faster**, but will have one-pixel **misalignment** problem sometimes (when setting image-width to 256, it will turn out to be 255 sometimes)
 
     ```
-    python render_svg2bitmap.py --data_base_dir='datasets'
+    python render_svg2bitmap.py --data_base_dir='datasets' --render_mode='v2'
     ```
+    
+    The raster images can be found under `datasets/` dir.
 
 
 ## Training
